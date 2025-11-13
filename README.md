@@ -38,11 +38,12 @@ Logging & Monitoring   ███████████████████
 ## 📋 Prerequisites
 
 1. **Fresh Ubuntu 22.04+ server** with root access
-2. **Domain names** pointed to your server:
+2. **Domain names** pointed to your server (all 3 are required):
    - Builder domain (e.g., `typebot.yourdomain.com`)
    - Viewer domain (e.g., `bot.yourdomain.com`)
-   - (Optional) MinIO domain (e.g., `minio.yourdomain.com`)
+   - MinIO domain (e.g., `minio.yourdomain.com`) - **Required for file uploads**
 3. **Cloudflare Origin SSL certificates** ([Free, 15-year validity](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/))
+   - **Important:** Certificate must include all 3 domains
 4. **SMTP credentials** for email magic link authentication
 
 ## 🚀 Quick Start
@@ -93,9 +94,10 @@ The script will guide you through an interactive setup process.
 
 ### 🌐 Network Security
 - UFW firewall with default deny incoming policy
-- MinIO ports bound to localhost only (not exposed to internet)
+- MinIO S3 API exposed via Nginx reverse proxy with SSL/TLS
 - Docker network isolation (`typebot-network`)
 - Fail2ban protection against SSH brute-force attacks
+- All services communicate internally via Docker network
 
 ### 🔐 SSH Hardening
 - Custom SSH port (2222) to reduce automated attacks

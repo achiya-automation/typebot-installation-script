@@ -140,12 +140,12 @@ echo ""
 print_step "STEP 1: Domain Configuration"
 echo ""
 
-print_info "You need 2 required domains pointing to this server's IP address:"
+print_info "You need 3 REQUIRED domains pointing to this server's IP address:"
 echo "  1. Builder domain (main Typebot interface) - REQUIRED"
 echo "  2. Viewer domain (for published bots) - REQUIRED"
-echo "  3. MinIO domain (for file storage console) - OPTIONAL"
+echo "  3. MinIO domain (for file storage S3 API) - REQUIRED"
 echo ""
-print_warning "MinIO Console domain is OPTIONAL - only if you want web access to manage files"
+print_warning "MinIO domain is REQUIRED for file uploads to work in Typebot"
 echo ""
 
 read_input "Enter Builder domain (e.g., typebot.example.com)" BUILDER_DOMAIN
@@ -154,17 +154,8 @@ validate_domain "$BUILDER_DOMAIN"
 read_input "Enter Viewer domain (e.g., typebot-bot.example.com)" VIEWER_DOMAIN
 validate_domain "$VIEWER_DOMAIN"
 
-echo ""
-read_yes_no "Do you want to set up MinIO Console web access?" SETUP_MINIO_CONSOLE "no"
-
-if [[ "$SETUP_MINIO_CONSOLE" == "yes" ]]; then
-    read_input "Enter MinIO domain (e.g., minio.example.com)" MINIO_DOMAIN
-    validate_domain "$MINIO_DOMAIN"
-    print_success "MinIO Console will be configured"
-else
-    MINIO_DOMAIN=""
-    print_info "MinIO Console web access skipped (files will still work in Typebot)"
-fi
+read_input "Enter MinIO domain (e.g., minio.example.com)" MINIO_DOMAIN
+validate_domain "$MINIO_DOMAIN"
 
 print_success "Domains configured"
 
@@ -282,11 +273,11 @@ print_success "Secure credentials generated"
 echo ""
 print_step "Installation Summary"
 echo ""
-echo "Builder Domain:    $BUILDER_DOMAIN"
-echo "Viewer Domain:     $VIEWER_DOMAIN"
-echo "MinIO Domain:      $MINIO_DOMAIN"
-echo "Admin Email:       $ADMIN_EMAIL"
-echo "Disable Signup:    $DISABLE_SIGNUP"
+echo "Builder Domain:      $BUILDER_DOMAIN"
+echo "Viewer Domain:       $VIEWER_DOMAIN"
+echo "MinIO Domain:        $MINIO_DOMAIN"
+echo "Admin Email:         $ADMIN_EMAIL"
+echo "Disable Signup:      $DISABLE_SIGNUP"
 echo "Google Integrations: $ENABLE_GOOGLE"
 echo ""
 
@@ -494,8 +485,8 @@ services:
     restart: always
     command: server /data --console-address ":9001"
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - "9000:9000"
+      - "9001:9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -604,14 +595,22 @@ NEXT_PUBLIC_SMTP_FROM=${SMTP_FROM}
 EMAIL_FROM=${SMTP_FROM}
 SMTP_FROM=${SMTP_FROM}
 
-# MinIO S3
+# MinIO S3 (Internal - for server-side operations)
 S3_ACCESS_KEY=${MINIO_ROOT_USER}
 S3_SECRET_KEY=${MINIO_ROOT_PASSWORD}
 S3_BUCKET=typebot
-S3_ENDPOINT=typebot-minio
-S3_PORT=9000
-S3_SSL=false
+S3_ENDPOINT=${MINIO_DOMAIN}
+S3_PORT=443
+S3_SSL=true
 S3_REGION=us-east-1
+
+# MinIO S3 (Public - for browser uploads)
+NEXT_PUBLIC_S3_ENDPOINT=${MINIO_DOMAIN}
+NEXT_PUBLIC_S3_PORT=443
+NEXT_PUBLIC_S3_SSL=true
+NEXT_PUBLIC_S3_BUCKET=typebot
+NEXT_PUBLIC_S3_REGION=us-east-1
+NEXT_PUBLIC_S3_ACCESS_KEY=${MINIO_ROOT_USER}
 
 # Docker Compose Variables (required by docker-compose.yml)
 DB_PASSWORD=${DB_PASSWORD}
@@ -799,10 +798,9 @@ NGINX_EOF
 sed -i "s/BUILDER_DOMAIN_PLACEHOLDER/${BUILDER_DOMAIN}/g" /etc/nginx/sites-available/typebot
 sed -i "s/VIEWER_DOMAIN_PLACEHOLDER/${VIEWER_DOMAIN}/g" /etc/nginx/sites-available/typebot
 
-# MinIO Nginx config (optional)
-if [[ "$SETUP_MINIO_CONSOLE" == "yes" ]]; then
-    print_info "Configuring Nginx for MinIO Console..."
-    cat > /etc/nginx/sites-available/minio << 'NGINX_MINIO_EOF'
+# MinIO Nginx config
+print_info "Configuring Nginx for MinIO S3 API..."
+cat > /etc/nginx/sites-available/minio << 'NGINX_MINIO_EOF'
 # MinIO - HTTP to HTTPS redirect
 server {
     listen 80;
@@ -822,18 +820,16 @@ server {
     ssl_prefer_server_ciphers off;
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 10m;
-    ssl_stapling on;
-    ssl_stapling_verify on;
 
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
-    add_header X-Frame-Options SAMEORIGIN always;
-    add_header X-Content-Type-Options nosniff always;
-    add_header X-XSS-Protection "1; mode=block" always;
+    client_max_body_size 100M;
+    client_body_timeout 300s;
 
-    client_max_body_size 500M;
+    # Disable buffering for MinIO uploads
+    proxy_buffering off;
+    proxy_request_buffering off;
 
     location / {
-        proxy_pass http://localhost:9001;
+        proxy_pass http://localhost:9000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -842,16 +838,16 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+        proxy_send_timeout 300s;
     }
 }
 NGINX_MINIO_EOF
 
-    sed -i "s/MINIO_DOMAIN_PLACEHOLDER/${MINIO_DOMAIN}/g" /etc/nginx/sites-available/minio
-    ln -sf /etc/nginx/sites-available/minio /etc/nginx/sites-enabled/
-    print_success "MinIO Console Nginx configured"
-else
-    print_info "Skipping MinIO Console Nginx configuration"
-fi
+sed -i "s/MINIO_DOMAIN_PLACEHOLDER/${MINIO_DOMAIN}/g" /etc/nginx/sites-available/minio
+ln -sf /etc/nginx/sites-available/minio /etc/nginx/sites-enabled/
+print_success "MinIO S3 API Nginx configured"
 
 # Enable sites
 ln -sf /etc/nginx/sites-available/typebot /etc/nginx/sites-enabled/
@@ -894,11 +890,12 @@ docker run --rm --network typebot_typebot-network \
   -e MC_HOST_minio="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@typebot-minio:9000" \
   minio/mc:latest mb minio/typebot > /dev/null 2>&1 || true
 
+print_info "Setting MinIO bucket policy to public..."
 docker run --rm --network typebot_typebot-network \
   -e MC_HOST_minio="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@typebot-minio:9000" \
-  minio/mc:latest anonymous set download minio/typebot > /dev/null 2>&1 || true
+  minio/mc:latest anonymous set public minio/typebot > /dev/null 2>&1 || true
 
-print_success "MinIO bucket configured"
+print_success "MinIO bucket configured with public access"
 
 ###########################################
 # Save Installation Info
@@ -937,7 +934,7 @@ Builder (Admin Interface):
 Viewer (Published Bots):
   https://${VIEWER_DOMAIN}
 
-MinIO Console (File Storage):
+MinIO S3 API (File Storage):
   https://${MINIO_DOMAIN}
 
 ╔══════════════════════════════════════════════════════════════╗
@@ -969,10 +966,11 @@ Redis:
 ║ MINIO CREDENTIALS                                            ║
 ╚══════════════════════════════════════════════════════════════╝
 
-MinIO Console: https://${MINIO_DOMAIN}
-Username: ${MINIO_ROOT_USER}
-Password: ${MINIO_ROOT_PASSWORD}
+MinIO S3 API Endpoint: https://${MINIO_DOMAIN}
+Access Key: ${MINIO_ROOT_USER}
+Secret Key: ${MINIO_ROOT_PASSWORD}
 Bucket: typebot
+Bucket Policy: public (allows uploads and downloads)
 
 ╔══════════════════════════════════════════════════════════════╗
 ║ ENCRYPTION SECRETS                                           ║
@@ -1106,9 +1104,7 @@ print_info "━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "  🌐 Builder:  https://${BUILDER_DOMAIN}"
 echo "  🌐 Viewer:   https://${VIEWER_DOMAIN}"
-if [[ "$SETUP_MINIO_CONSOLE" == "yes" ]]; then
-    echo "  🌐 MinIO:    https://${MINIO_DOMAIN}"
-fi
+echo "  🌐 MinIO:    https://${MINIO_DOMAIN}"
 echo ""
 print_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 print_info "LOGIN CREDENTIALS:"

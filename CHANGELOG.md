@@ -5,6 +5,47 @@ All notable changes to the Typebot Installation Script will be documented in thi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2025-11-13
+
+### 🔧 Critical Fix - File Upload Support
+
+This release fixes a critical issue where file uploads in Typebot were not working due to incorrect MinIO configuration.
+
+### Fixed
+- **MinIO File Upload Configuration** - Browser-based file uploads now work correctly
+  - Changed MinIO ports from localhost-only (`127.0.0.1:9000`) to externally accessible (`9000:9000`)
+  - Added Nginx reverse proxy configuration for MinIO S3 API endpoint
+  - Updated S3 configuration to use public domain instead of internal Docker network name
+  - Added `NEXT_PUBLIC_S3_*` environment variables for browser-side S3 access
+  - Changed MinIO bucket policy from `download` to `public` to allow uploads
+
+### Changed
+- **MinIO Domain is now REQUIRED** (was optional)
+  - File uploads will not work without a properly configured MinIO domain
+  - SSL certificate must include all 3 domains (builder, viewer, minio)
+- **S3 Configuration Updated**
+  - `S3_ENDPOINT`: Changed from `typebot-minio` to `${MINIO_DOMAIN}`
+  - `S3_PORT`: Changed from `9000` to `443`
+  - `S3_SSL`: Changed from `false` to `true`
+  - Added public S3 configuration for browser uploads
+
+### Added
+- **Nginx Configuration for MinIO S3 API**
+  - Dedicated Nginx server block for MinIO S3 API
+  - SSL/TLS termination for secure file uploads
+  - Optimized proxy settings for large file uploads (100MB max)
+  - Disabled buffering for better upload performance
+- **Browser Upload Support**
+  - Added `NEXT_PUBLIC_S3_ENDPOINT`, `NEXT_PUBLIC_S3_PORT`, `NEXT_PUBLIC_S3_SSL`
+  - Added `NEXT_PUBLIC_S3_BUCKET`, `NEXT_PUBLIC_S3_REGION`, `NEXT_PUBLIC_S3_ACCESS_KEY`
+
+### Security
+- MinIO S3 API now properly secured with SSL/TLS via Nginx reverse proxy
+- All file uploads are encrypted in transit (HTTPS)
+- Bucket policy set to public only for the `typebot` bucket (controlled access)
+
+---
+
 ## [3.0.0] - 2025-11-13
 
 ### 🎉 Major Release - Maximum Security Hardening
