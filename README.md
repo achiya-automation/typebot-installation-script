@@ -1,6 +1,6 @@
 # 🚀 Typebot Installation Script
 
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/achiya-automation/typebot-installation-script/releases/tag/v3.0.0)
+[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](https://github.com/achiya-automation/typebot-installation-script/releases/tag/v3.1.0)
 [![Security](https://img.shields.io/badge/security-99%2F100-brightgreen.svg)](https://github.com/achiya-automation/typebot-installation-script/blob/main/SECURITY_AUDIT.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Ubuntu](https://img.shields.io/badge/ubuntu-22.04%20%7C%2024.04-orange.svg)](https://ubuntu.com/)
