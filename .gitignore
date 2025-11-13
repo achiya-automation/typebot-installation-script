@@ -1,0 +1,41 @@
+# Sensitive files
+*.env
+.env
+.env.*
+INSTALLATION_INFO.txt
+*.key
+*.pem
+*.crt
+*-key.pem
+*-cert.pem
+
+# SSL Certificates
+ssl/
+certs/
+
+# Backup files
+*.bak
+*.backup
+*.tar.gz
+backup/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Test files
+test/
+tmp/
+temp/
