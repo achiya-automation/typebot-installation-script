@@ -147,6 +147,9 @@ echo "  3. MinIO domain (for file storage S3 API) - REQUIRED"
 echo ""
 print_warning "MinIO domain is REQUIRED for file uploads to work in Typebot"
 echo ""
+print_warning "⚠ IMPORTANT: ALL domains MUST be proxied through Cloudflare (orange cloud 🟠)"
+print_info "In Cloudflare DNS settings, ensure the proxy status is enabled for all domains"
+echo ""
 
 read_input "Enter Builder domain (e.g., typebot.example.com)" BUILDER_DOMAIN
 validate_domain "$BUILDER_DOMAIN"
@@ -206,6 +209,7 @@ echo ""
 
 print_info "You need Cloudflare Origin SSL Certificate"
 print_info "Get it from: Cloudflare Dashboard → SSL/TLS → Origin Server → Create Certificate"
+print_warning "⚠ SSL/TLS mode in Cloudflare MUST be set to 'Full (strict)'"
 echo ""
 
 read_multiline "Paste your Cloudflare Origin Certificate (PEM format):" SSL_CERT
@@ -299,6 +303,22 @@ apt upgrade -y > /dev/null 2>&1
 apt install -y curl wget git vim htop net-tools unattended-upgrades openssl > /dev/null 2>&1
 
 print_success "System updated"
+
+###########################################
+# System Optimizations
+###########################################
+
+echo ""
+print_step "INSTALLING: System Optimizations"
+
+# Fix Redis memory overcommit warning
+print_info "Optimizing system settings for Redis..."
+if ! grep -q "vm.overcommit_memory = 1" /etc/sysctl.conf; then
+    echo "vm.overcommit_memory = 1" >> /etc/sysctl.conf
+    sysctl -p > /dev/null 2>&1
+fi
+
+print_success "System optimizations applied"
 
 ###########################################
 # SSH Security
@@ -898,6 +918,63 @@ docker run --rm --network typebot_typebot-network \
 print_success "MinIO bucket configured with public access"
 
 ###########################################
+# Verify Cloudflare Proxy Configuration
+###########################################
+
+echo ""
+print_step "VERIFYING: Cloudflare Configuration"
+
+print_info "Checking if domains are proxied through Cloudflare..."
+
+# Function to check if domain is proxied through Cloudflare
+check_cloudflare_proxy() {
+    local domain=$1
+    local ip=$(dig +short "$domain" | head -1)
+
+    # Cloudflare IP ranges (simplified check - checks if it's not the server's direct IP)
+    if [[ -n "$ip" ]]; then
+        # Get server's public IP
+        local server_ip=$(curl -s ifconfig.me)
+
+        if [[ "$ip" == "$server_ip" ]]; then
+            return 1  # Not proxied
+        else
+            return 0  # Proxied
+        fi
+    fi
+    return 1
+}
+
+CLOUDFLARE_WARNING=0
+
+for domain in "$BUILDER_DOMAIN" "$VIEWER_DOMAIN" "$MINIO_DOMAIN"; do
+    if check_cloudflare_proxy "$domain"; then
+        print_success "$domain is proxied through Cloudflare"
+    else
+        print_warning "$domain may NOT be proxied through Cloudflare (direct IP detected)"
+        CLOUDFLARE_WARNING=1
+    fi
+done
+
+if [[ $CLOUDFLARE_WARNING -eq 1 ]]; then
+    echo ""
+    print_warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print_warning "⚠  ACTION REQUIRED: CLOUDFLARE PROXY CONFIGURATION"
+    print_warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Some domains are not proxied through Cloudflare."
+    echo "Please ensure ALL domains have the orange cloud (🟠) enabled in Cloudflare DNS:"
+    echo ""
+    echo "1. Go to Cloudflare Dashboard → DNS"
+    echo "2. Find each domain ($BUILDER_DOMAIN, $VIEWER_DOMAIN, $MINIO_DOMAIN)"
+    echo "3. Click the gray cloud (🌥️) to make it orange (🟠)"
+    echo "4. Wait 1-5 minutes for DNS propagation"
+    echo ""
+    print_warning "Without Cloudflare proxy, SSL certificates will NOT work!"
+    echo ""
+fi
+
+###########################################
 # Save Installation Info
 ###########################################
 
@@ -923,6 +1000,22 @@ To reconnect to this server, use:
 
 Firewall (UFW) is active and configured.
 Fail2ban is protecting SSH from brute-force attacks.
+
+╔══════════════════════════════════════════════════════════════╗
+║ CLOUDFLARE CONFIGURATION                                     ║
+╚══════════════════════════════════════════════════════════════╝
+
+⚠ IMPORTANT: Ensure ALL domains are proxied through Cloudflare:
+  - ${BUILDER_DOMAIN}
+  - ${VIEWER_DOMAIN}
+  - ${MINIO_DOMAIN}
+
+In Cloudflare Dashboard:
+  1. Go to DNS settings
+  2. Enable proxy (orange cloud 🟠) for all three domains
+  3. Set SSL/TLS mode to "Full (strict)"
+
+Without Cloudflare proxy, HTTPS will NOT work!
 
 ╔══════════════════════════════════════════════════════════════╗
 ║ ACCESS URLS                                                  ║
@@ -1053,6 +1146,10 @@ If services are not accessible:
   5. Check firewall:
        ufw status
 
+  6. Verify Cloudflare proxy is enabled:
+       dig yourdomain.com +short
+       (Should show Cloudflare IPs, not your server IP)
+
 ╔══════════════════════════════════════════════════════════════╗
 ║ NEXT STEPS                                                   ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -1060,15 +1157,17 @@ If services are not accessible:
 1. ⚠ Reconnect to server using port 2222:
    ssh -p 2222 root@$(curl -s ifconfig.me)
 
-2. Visit https://${BUILDER_DOMAIN}
+2. ⚠ Verify Cloudflare proxy is enabled for ALL domains
 
-3. Sign in with: ${ADMIN_EMAIL}
+3. Visit https://${BUILDER_DOMAIN}
 
-4. Check your email for the magic link
+4. Sign in with: ${ADMIN_EMAIL}
 
-5. Start building your first bot!
+5. Check your email for the magic link
 
-6. ⚠ IMPORTANT: Save this file securely and then delete it:
+6. Start building your first bot!
+
+7. ⚠ IMPORTANT: Save this file securely and then delete it:
    rm /opt/typebot/INSTALLATION_INFO.txt
 
 ═══════════════════════════════════════════════════════════════
@@ -1092,7 +1191,7 @@ echo "╔═══════════════════════�
 echo "║                                                              ║"
 echo "║              INSTALLATION COMPLETED SUCCESSFULLY! 🎉         ║"
 echo "║                                                              ║"
-echo "╔══════════════════════════════════════════════════════════════╗"
+echo "╔══════════════════════════════════════════════════════════════╝"
 echo ""
 
 print_success "All services are running and healthy!"
@@ -1113,6 +1212,16 @@ echo ""
 echo "  📧 Admin Email: ${ADMIN_EMAIL}"
 echo "  🔐 Method: Email Magic Link (check your inbox)"
 echo ""
+
+if [[ $CLOUDFLARE_WARNING -eq 1 ]]; then
+    print_warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print_warning "⚠  ACTION REQUIRED: ENABLE CLOUDFLARE PROXY"
+    print_warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Go to Cloudflare Dashboard → DNS"
+    echo "  Enable orange cloud (🟠) for all domains"
+    echo ""
+fi
 
 print_warning "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 print_warning "⚠  IMPORTANT SECURITY NOTICE ⚠"
