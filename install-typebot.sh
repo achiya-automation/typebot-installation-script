@@ -621,6 +621,23 @@ ENV_EOF
 
 # Add Google integrations if enabled
 if [[ "$ENABLE_GOOGLE" == "yes" ]]; then
+    # Add global Google OAuth credentials (required for all Google integrations)
+    if [[ -n "$GOOGLE_CLIENT_ID" && -n "$GOOGLE_CLIENT_SECRET" ]]; then
+        cat >> .env << GOOGLE_OAUTH_EOF
+
+# Google OAuth (required for Google integrations)
+GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+GOOGLE_OAUTH_EOF
+    fi
+
+    # Add global Google API Key (required for Picker API and other Google services)
+    if [[ -n "$GOOGLE_API_KEY" ]]; then
+        cat >> .env << GOOGLE_API_EOF
+NEXT_PUBLIC_GOOGLE_API_KEY=${GOOGLE_API_KEY}
+GOOGLE_API_EOF
+    fi
+
     if [[ "$ENABLE_GOOGLE_SHEETS" == "yes" ]]; then
         cat >> .env << GS_EOF
 
